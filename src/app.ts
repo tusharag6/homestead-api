@@ -5,6 +5,7 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 
 import userRouter from "./routes/user.routes";
+import listingRouter from "./routes/listing.routes";
 
 require("dotenv").config();
 
@@ -24,5 +25,6 @@ app.get("/", (req, res) => {
 });
 
 app.use("/api/v1/user", userRouter);
+app.use("/api/v1/listings", listingRouter);
 
 export default app;
