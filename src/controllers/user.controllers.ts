@@ -7,39 +7,34 @@ import { isPasswordCorrect } from "../utils/isPasswordCorrect";
 import { generateAccessToken } from "../utils/generateAccessToken";
 import { generateRefreshToken } from "../utils/generateRefreshToken";
 import { CustomRequest } from "../interfaces/auth.interfaces";
+import { generateToken } from "../utils/generateToken";
 
-const generateAccessAndRefreshTokens = async (userId: string) => {
+const generateTokenDB = async (userId: string) => {
   try {
     const user = await User.findById(userId);
-
     if (!user) {
       throw new ApiError(404, "User not found");
     }
-
-    const accessToken = await generateAccessToken(user.id);
-    const refreshToken = await generateRefreshToken(user.id);
-
-    user.refreshToken = refreshToken;
-
+    const token = await generateToken(user.id);
+    user.token = token;
     await user.save({ validateBeforeSave: false });
-    return { accessToken, refreshToken };
+    return { token };
   } catch (error) {
-    throw new ApiError(
-      500,
-      "Something went wrong while generating the access token"
-    );
+    throw new ApiError(500, "Something went wrong while generating the token");
   }
 };
 
 const registerUser = async (req: Request, res: Response) => {
   const { email, username, password, role } = req.body;
 
-  const existedUser = await User.findOne({
-    $or: [{ username }, { email }],
-  });
+  const existedUser = await User.findOne({ email });
 
   if (existedUser) {
-    throw new ApiError(409, "User with email or username already exists", []);
+    return res
+      .status(409)
+      .json(
+        new ApiResponse(409, {}, "An account with this email already exists.")
+      );
   }
 
   const user = await User.create({
@@ -49,60 +44,65 @@ const registerUser = async (req: Request, res: Response) => {
     role: role || UserRolesEnum.USER,
   });
 
-  const createdUser = await User.findById(user._id).select(
-    "-password -refreshToken "
-  );
+  const createdUser = await User.findById(user._id).select("-password -token ");
 
   return res
     .status(201)
     .json(
-      new ApiResponse(
-        200,
-        { user: createdUser },
-        "User registered successfully"
-      )
+      new ApiResponse(200, { createdUser }, "User registered successfully")
     );
 };
 
 const loginUser = async (req: Request, res: Response) => {
-  const { email, username, password } = req.body;
+  const { email, password } = req.body;
 
-  if (!username && !email) {
-    throw new ApiError(400, "Username or email is required");
+  if (!email) {
+    return res
+      .status(400)
+      .json(new ApiResponse(400, {}, "Please provide a valid email address."));
   }
 
-  const user = await User.findOne({
-    $or: [{ username }, { email }],
-  });
+  const user = await User.findOne({ email });
 
   if (!user) {
-    throw new ApiError(404, "User does not exist");
+    return res
+      .status(404)
+      .json(
+        new ApiResponse(
+          404,
+          {},
+          "No account found with this email. Please register."
+        )
+      );
   }
 
   if (user.loginType !== UserLoginType.EMAIL_PASSWORD) {
-    throw new ApiError(
-      400,
-      "You have previously registered using " +
-        user.loginType.toLowerCase() +
-        " . Please use the " +
-        user.loginType.toLowerCase() +
-        " login option to access your account."
-    );
+    return res
+      .status(400)
+      .json(
+        new ApiResponse(
+          400,
+          {},
+          "You have previously registered using " +
+            user.loginType.toLowerCase() +
+            " . Please use the " +
+            user.loginType.toLowerCase() +
+            " login option to access your account."
+        )
+      );
   }
 
   const isPasswordValid = await isPasswordCorrect(password, user.id);
 
   if (!isPasswordValid) {
-    throw new ApiError(401, "Invalid user credentials");
+    return res
+      .status(401)
+      .json(new ApiResponse(401, {}, "Incorrect email or password!"));
   }
 
-  const { accessToken, refreshToken } = await generateAccessAndRefreshTokens(
-    user.id
-  );
+  const { token } = await generateTokenDB(user.id);
 
-  const loggedInUser = await User.findById(user._id).select(
-    "-password -refreshToken"
-  );
+  const loggedInUser = await User.findById(user._id).select("-password -token");
 
   const options = {
     httpOnly: true,
@@ -111,12 +111,11 @@ const loginUser = async (req: Request, res: Response) => {
 
   return res
     .status(200)
-    .cookie("accessToken", accessToken, options)
-    .cookie("refreshToken", refreshToken, options)
+    .cookie("token", token, options)
     .json(
       new ApiResponse(
         200,
-        { user: loggedInUser, accessToken, refreshToken },
+        { user: loggedInUser, token },
         "User logged in successfully"
       )
     );
@@ -127,7 +126,7 @@ const logoutUser = async (req: CustomRequest, res: Response) => {
     req.user?.id,
     {
       $set: {
-        refreshToken: "",
+        token: "",
       },
     },
     { new: true }
@@ -140,13 +139,13 @@ const logoutUser = async (req: CustomRequest, res: Response) => {
 
   return res
     .status(200)
-    .clearCookie("accessToken", options)
-    .clearCookie("refreshToken", options)
+    .clearCookie("token", options)
     .json(new ApiResponse(200, {}, "User logged out"));
 };
 
 const refreshAccessToken = async (req: Request, res: Response) => {
-  const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
+  const refreshToken = req.cookies?.refreshToken;
+  console.log("Refresh request", refreshToken);
 
   if (!refreshToken) {
     return res.status(401).json(new ApiError(401, "Unauthorized request"));
@@ -172,17 +171,16 @@ const refreshAccessToken = async (req: Request, res: Response) => {
       secure: process.env.NODE_ENV === "production",
     };
 
-    const { accessToken, refreshToken: newRefreshToken } =
-      await generateAccessAndRefreshTokens(user.id);
-
+    const accessToken = await generateAccessToken(user.id);
+    console.log("Sending access token", accessToken);
     return res
       .status(200)
       .cookie("accessToken", accessToken, options)
-      .cookie("refreshToken", newRefreshToken, options)
+      .cookie("refreshToken", refreshToken, options)
       .json(
         new ApiResponse(
           200,
-          { accessToken, refreshToken: newRefreshToken },
+          { accessToken, refreshToken },
           "Access token refreshed"
         )
       );
