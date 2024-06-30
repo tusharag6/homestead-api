@@ -42,6 +42,8 @@ const verifyJWT = async (
     if (error instanceof Error) {
       errorMessage = error.message;
     }
+    console.log(error);
+
     return res.status(401).json(new ApiResponse(401, {}, errorMessage));
   }
 };

@@ -6,6 +6,7 @@ import { Response, Request } from "express";
 import { isPasswordCorrect } from "../utils/isPasswordCorrect";
 import { CustomRequest } from "../interfaces/auth.interfaces";
 import { generateToken } from "../utils/generateToken";
+import jwt, { JwtPayload } from "jsonwebtoken";
 
 const generateTokenDB = async (userId: string) => {
   try {
@@ -118,26 +119,52 @@ const loginUser = async (req: Request, res: Response) => {
     );
 };
 
-const logoutUser = async (req: CustomRequest, res: Response) => {
-  await User.findByIdAndUpdate(
-    req.user?.id,
-    {
-      $set: {
-        token: "",
+const logoutUser = async (req: Request, res: Response) => {
+  const token = req.header("Authorization")?.replace("Bearer ", "");
+
+  if (!token) {
+    return res
+      .status(401)
+      .json(new ApiResponse(401, {}, "Unauthorized request"));
+  }
+
+  const secret = process.env.TOKEN_SECRET;
+
+  if (!secret) {
+    return res
+      .status(500)
+      .json(new ApiResponse(500, {}, "TOKEN_SECRET is not defined"));
+  }
+
+  try {
+    const decodedToken = jwt.verify(token, secret) as JwtPayload;
+    const user = await User.findById(decodedToken?._id).select(
+      "-password -token"
+    );
+
+    if (!user) {
+      return res.status(401).json(new ApiResponse(401, {}, "Invalid token"));
+    }
+
+    await User.findByIdAndUpdate(
+      user?.id,
+      {
+        $set: {
+          token: "",
+        },
       },
-    },
-    { new: true }
-  );
+      { new: true }
+    );
+  } catch (error) {
+    console.log("error", error);
 
-  const options = {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-  };
-
-  return res
-    .status(200)
-    .clearCookie("token", options)
-    .json(new ApiResponse(200, {}, "User logged out"));
+    let errorMessage = "Invalid refresh token";
+    if (error instanceof Error) {
+      errorMessage = error.message;
+    }
+    return res.status(401).json(new ApiError(401, errorMessage));
+  }
+  return res.status(200).json(new ApiResponse(200, {}, "User logged out"));
 };
 
 const profile = async (req: CustomRequest, res: Response) => {
@@ -177,8 +204,8 @@ const refreshToken = async (req: Request, res: Response) => {
     }
 
     const { token } = await generateTokenDB(user.id);
-    console.log("Sending access token", token);
-    return res.status(200).json(new ApiResponse(200, token, "Token refreshed"));
+    console.log("Sending access token");
+    return res.status(200).json(token);
   } catch (error) {
     let errorMessage = "Invalid refresh token";
     if (error instanceof Error) {
