@@ -4,8 +4,6 @@ import ApiError from "../utils/ApiError";
 import ApiResponse from "../utils/ApiResponse";
 import { Response, Request } from "express";
 import { isPasswordCorrect } from "../utils/isPasswordCorrect";
-import { generateAccessToken } from "../utils/generateAccessToken";
-import { generateRefreshToken } from "../utils/generateRefreshToken";
 import { CustomRequest } from "../interfaces/auth.interfaces";
 import { generateToken } from "../utils/generateToken";
 
@@ -111,7 +109,6 @@ const loginUser = async (req: Request, res: Response) => {
 
   return res
     .status(200)
-    .cookie("token", token, options)
     .json(
       new ApiResponse(
         200,
@@ -143,47 +140,45 @@ const logoutUser = async (req: CustomRequest, res: Response) => {
     .json(new ApiResponse(200, {}, "User logged out"));
 };
 
-const refreshAccessToken = async (req: Request, res: Response) => {
-  const refreshToken = req.cookies?.refreshToken;
-  console.log("Refresh request", refreshToken);
+const profile = async (req: CustomRequest, res: Response) => {
+  const user = await User.findById(req.user?.id).select("-password -token");
 
-  if (!refreshToken) {
-    return res.status(401).json(new ApiError(401, "Unauthorized request"));
+  if (!user) {
+    return res.status(404).json(new ApiResponse(404, {}, "Login Again!"));
   }
 
-  const secret = process.env.REFRESH_TOKEN_SECRET;
+  return res
+    .status(200)
+    .json(new ApiResponse(200, user, "Profile Fetched successfully"));
+};
+
+const refreshToken = async (req: Request, res: Response) => {
+  const userToken = req.header("Authorization")?.replace("Bearer ", "");
+
+  if (!userToken) {
+    return res
+      .status(401)
+      .json(new ApiResponse(401, {}, "Unauthorized request"));
+  }
+
+  const secret = process.env.TOKEN_SECRET;
 
   if (!secret) {
     return res
       .status(500)
-      .json(new ApiError(500, "REFRESH_TOKEN_SECRET is not defined"));
+      .json(new ApiResponse(500, {}, "TOKEN_SECRET is not defined"));
   }
 
   try {
-    const user = await User.findOne({ refreshToken });
+    const user = await User.findOne({ token: userToken });
 
     if (!user) {
-      return res.status(401).json(new ApiError(401, "Invalid refresh token"));
+      return res.status(401).json(new ApiError(401, "Invalid token"));
     }
 
-    const options = {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-    };
-
-    const accessToken = await generateAccessToken(user.id);
-    console.log("Sending access token", accessToken);
-    return res
-      .status(200)
-      .cookie("accessToken", accessToken, options)
-      .cookie("refreshToken", refreshToken, options)
-      .json(
-        new ApiResponse(
-          200,
-          { accessToken, refreshToken },
-          "Access token refreshed"
-        )
-      );
+    const { token } = await generateTokenDB(user.id);
+    console.log("Sending access token", token);
+    return res.status(200).json(new ApiResponse(200, token, "Token refreshed"));
   } catch (error) {
     let errorMessage = "Invalid refresh token";
     if (error instanceof Error) {
@@ -193,4 +188,4 @@ const refreshAccessToken = async (req: Request, res: Response) => {
   }
 };
 
-export { registerUser, loginUser, logoutUser, refreshAccessToken };
+export { registerUser, loginUser, logoutUser, refreshToken, profile };
