@@ -4,6 +4,7 @@
   "main": "src/index.ts",
   "scripts": {
     "start": "ts-node src/index.ts",
+    "seed" : "ts-node src/db/seeds/listing.ts",
     "dev": "nodemon src/index.ts",
     "build": "tsc",
     "start:dist": "node dist/src/index.js",

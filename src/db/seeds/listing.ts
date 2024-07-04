@@ -18,6 +18,7 @@ const seedListings = async () => {
     // Map JSON data to schema
     const listings = data
       .filter((item: any) => item.xl_picture_url)
+      .slice(0, 30)
       .map((item: any) => ({
         name: item.name,
         description: item.description,
@@ -31,7 +32,7 @@ const seedListings = async () => {
         house_rules: item.house_rules,
         listing_image_url: item.xl_picture_url,
         amenities: item.amenities,
-        price: item.price,
+        price: item.price * 25,
         review_scores_rating: item.review_scores_rating / 20,
         number_of_reviews: item.number_of_reviews,
         room_type: item.room_type,
