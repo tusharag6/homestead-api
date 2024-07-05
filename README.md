@@ -20,7 +20,7 @@ This repository contains the backend services for the Homestead App, a React Nat
 To get started with the backend, clone this repository and install the dependencies:
 
 ```bash
-https://github.com/tusharag6/homestead-api
+git clone https://github.com/tusharag6/homestead-api.git
 cd homestead-api
 npm install
 ```
