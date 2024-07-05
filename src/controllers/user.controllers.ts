@@ -167,16 +167,45 @@ const logoutUser = async (req: Request, res: Response) => {
   return res.status(200).json(new ApiResponse(200, {}, "User logged out"));
 };
 
-const profile = async (req: CustomRequest, res: Response) => {
-  const user = await User.findById(req.user?.id).select("-password -token");
+const profile = async (req: Request, res: Response) => {
+  const token = req.header("Authorization")?.replace("Bearer ", "");
 
-  if (!user) {
-    return res.status(404).json(new ApiResponse(404, {}, "Login Again!"));
+  if (!token) {
+    return res
+      .status(401)
+      .json(new ApiResponse(401, {}, "Unauthorized request"));
   }
 
-  return res
-    .status(200)
-    .json(new ApiResponse(200, user, "Profile Fetched successfully"));
+  const secret = process.env.TOKEN_SECRET;
+
+  if (!secret) {
+    return res
+      .status(500)
+      .json(new ApiResponse(500, {}, "TOKEN_SECRET is not defined"));
+  }
+
+  try {
+    const decodedToken = jwt.verify(token, secret) as JwtPayload;
+    const user = await User.findById(decodedToken?._id).select(
+      "-password -token"
+    );
+
+    if (!user) {
+      return res.status(401).json(new ApiResponse(401, {}, "Invalid token"));
+    }
+
+    return res
+      .status(200)
+      .json(new ApiResponse(200, user, "Profile Fetched successfully"));
+  } catch (error) {
+    console.log("error", error);
+
+    let errorMessage = "Invalid refresh token";
+    if (error instanceof Error) {
+      errorMessage = error.message;
+    }
+    return res.status(401).json(new ApiError(401, errorMessage));
+  }
 };
 
 const refreshToken = async (req: Request, res: Response) => {

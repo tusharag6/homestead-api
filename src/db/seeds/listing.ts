@@ -18,7 +18,7 @@ const seedListings = async () => {
     // Map JSON data to schema
     const listings = data
       .filter((item: any) => item.xl_picture_url)
-      .slice(0, 30)
+      // .slice(0, 30)
       .map((item: any) => ({
         name: item.name,
         description: item.description,
